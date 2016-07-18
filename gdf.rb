@@ -1,4 +1,4 @@
-#!/usr/bin/env ruby/
+#!/usr/bin/env ruby
 #
 
 require 'bindata'
@@ -8,10 +8,10 @@ require_relative 'ecef'
 module GDF
 	VALID_POSTFIX = "\x01\x03\x03"
 	T0 = Time.utc(2000, 01, 01, 0, 0, 0)
-
-	
-
-
+	DELIM_DEFAULT = ','
+	LMT_OFFSET_DEFAULT = "-08:00"
+	DATE_FORMAT = "%Y-%m-%d"
+	TIME_FORMAT = "%H:%M:%S"
 	
 	# Records within each Fix: ###################
 	
@@ -24,11 +24,11 @@ module GDF
 
 		def get
 			s = raw_seconds & 0x3FFFFFFF 	# filter out most siginificant bit
-			return GDF::T0 + s
+			return T0 + s
 		end
 
 		def set(time_in)
-			time = Time.at(time_in) - GDF::T0
+			time = Time.at(time_in) - T0
 			self.raw_seconds = time.to_i
 		end
 	end
@@ -51,6 +51,7 @@ module GDF
 			self.ecef_y = ecef_in.y.to_i
 			self.ecef_z = ecef_in.z.to_i
 		end
+
 	end
 
 	class MortStatus < BinData::Primitive
@@ -127,7 +128,7 @@ module GDF
 			if (0x01..0xFE) === self.error_raw 
 				self.error_raw.to_f / 5.0
 			else
-				return NA
+				return "NA"
 			end
 		end
 
@@ -174,7 +175,7 @@ module GDF
 		string :prefix, :read_length => 4
 		string :msg, :read_length => 16
 		string :postfix, :read_length => 3
-		virtual :valid, :assert =>	lambda { postfix == GDF::VALID_POSTFIX }
+		virtual :valid, :assert =>	lambda { postfix == VALID_POSTFIX }
 	end
 
 	# Junk
@@ -191,8 +192,10 @@ module GDF
 	# is just repeated fixes.
 	class Fix < BinData::Record
 		default_parameter :id => nil
+		default_parameter :lmt_offset => LMT_OFFSET_DEFAULT
 
 		virtual :collarID, :value => :id
+		virtual :lmt, :value => :lmt_offset
 
 		time_record :time
 		coord 		:position
@@ -200,12 +203,128 @@ module GDF
 		fix_type 	:fixType
 		dop			:degreeOfPrecision
 		sat_array 	:sats
+		virtual 	:numSats, :value => lambda {
+			self.sats.find_all { |s| s.snr != 0}.length
+		}
 		error		:error3D
 		voltage		:mainV
 		voltage		:beaconV
 		temperature :tempC
 
+		def to_row(delim = DELIM_DEFAULT)
+			s = collarID.to_s + delim +
+				time.utc.strftime(DATE_FORMAT) + delim + 
+				time.utc.strftime(TIME_FORMAT) + delim +
+				time.localtime(lmt).strftime(DATE_FORMAT) + delim + 
+				time.localtime(lmt).strftime(TIME_FORMAT) + delim +
+				position.x.to_i.to_s + delim + 
+				position.y.to_i.to_s + delim + 
+				position.z.to_i.to_s + delim +
+				position.lat.round(5).to_s + delim +
+				position.lon.round(5).to_s + delim +
+				position.alt.round(2).to_s + delim +
+				position.e.to_i.to_s + delim +
+				position.n.to_i.to_s + delim + 
+				degreeOfPrecision.to_s + delim + 
+				fixType + delim +
+				numSats.to_s + delim 
+			sats.each { |sat| s += sat.num.to_s + delim + sat.snr.to_s + delim }
+			s += mainV.to_s + delim +
+				beaconV.to_s + delim + 
+				tempC.to_s
+		end
+		
+		def Fix.row_names(delim = DELIM_DEFAULT)
+			s = ""
+			ROW_NAMES.each do |name|
+				s += name + delim
+			end
+			s[-1] = "\n"
+			return s
+		end
+		
+		ROW_NAMES = 
+			["Collar ID",
+				"UTC Date",
+				"UTC Time",
+				"LMT Date",
+				"LMT Time",
+				"ECEF X",
+				"ECEF Y",
+				"ECEF Z",
+				"Latitude",
+				"Longitutde",
+				"Height",
+				"Easting",
+				"Northing",
+				"DoP",
+				"Fix Type",
+				"Sats Used",
+				"Sat",
+				"C/N",
+				"Sat",
+				"C/N",
+				"Sat",
+				"C/N",
+				"Sat",
+				"C/N",
+				"Sat",
+				"C/N",
+				"Sat",
+				"C/N",
+				"Sat",
+				"C/N",
+				"Sat",
+				"C/N",
+				"Sat",
+				"C/N",
+				"Sat",
+				"C/N",
+				"Sat",
+				"C/N",
+				"Main Voltage",
+				"Beacon Voltage",
+				"Temp"]
 	end
+
+	# GDF
+	# Whole file
+	class GDF < BinData::Record
+		default_parameter :filename => nil
+		virtual :file, :value => :filename
+
+		header 	:head
+		virtual :collarID, :value => lambda { head.collar_id }
+		junk	:preamble
+		array 	:fixes, :read_until => :eof do
+			fix :id => :collarID
+		end
+
+		def get_csv_header(delim = DELIM_DEFAULT)
+			rowhead = Fix::row_names(delim)
+			rowhead = "No" + delim + rowhead
+			return rowhead
+		end
+
+		def to_csv(delim = DELIM_DEFAULT )
+			csv = "" 
+			self.fixes.to_a.each_index do |i|
+				row = i.to_s + delim
+				row += fixes[i].to_row(delim)
+				row += "\n"
+				csv += row
+			end
+			return csv
+		end
+
+	end
+	
+
+	# def get_csv_header(delim = DELIM_DEFAULT)
+	# 	rowhead = Fix::row_names(delim)
+	# 	rowhead = "No" + delim + rowhead
+	# 	return rowhead
+	# end
 
 
 
