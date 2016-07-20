@@ -106,7 +106,38 @@ class ECEF
 	end
 
 	def to_utm
-		return GeoUtm::LatLon.new(self.lat, self.lon).to_utm
+		if ( self.lat.nan? || self.lon.nan?)
+			utm = GeoUtm::UTM.new("N/A","N/A","N/A")  
+		else
+
+			begin	
+				utm = GeoUtm::LatLon.new(self.lat, self.lon).to_utm
+			rescue
+				utm = GeoUtm::UTM.new("N/A","N/A","N/A")
+			end
+		end
+
+		return utm
 	end
+
+	def e
+		self.to_utm.e
+	end
+
+	def n
+		self.to_utm.n
+	end
+
+	def zone
+		self.to_utm.zone
+	end
+
+
+	def to_s 
+		"x: " + x.to_s + 
+			", y: " + y.to_s + 
+			", z: " + z.to_s
+	end
+
 end
 
