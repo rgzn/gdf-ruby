@@ -1,0 +1,24 @@
+Bytes: Meaning 
+
+#--PREAMBLE-----#
+x00-x03: Serial #, going from LSB-MSB
+x02-x07: CONSTANT: 00 00 5A 5A 5A 5A (Changing these gives "Invalid File Header" error)
+x08-x17: Some sort of ASCII encoded message can be "Not Available" changing does not result in error.
+x18-1A:  CONSTANT: 01 03 03 (termination string?)
+x1A-x4D: CONSTANT? dO THESE EVEN MATTER? junk???
+####################
+
+#--Data------#
+
+x4E-x51: DATE/TIME: in seconds since 20000101_00:00:00
+x52-x55: POSITION: ECEF X
+x57-x59: POSITION: ECEF Y
+x5A-x5D: POSITIONS: ECEF Z
+x5E: Fix Type: 00 => No Fix, 11 => 1S, 12 => 2S, 13 => 2D, 14 => 3D, 55 => ARGOS (need to map this completely)
+x5F: DOP: round(DOP*5)
+x60-x6B: Sat Channels: channels/dB (each byte is sat # and dbHz)
+x6C: Main Voltage: round(mainVoltage*50)
+x6D: Backup Voltage: round(backupVoltage*50)
+x6E: Temperature: tempC+103
+
+#--Previous 33 bytes repeated for each point
